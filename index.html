@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Academic Writing Hub — Research Methodology Studio</title>
+
+  <!-- Academic Typography: Alegreya (Serif) & Inter (UI Sans) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Firebase Realtime Database (Compat SDK) -->
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <!-- Client-Side Canvas QR Generator -->
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- Application Modules -->
+  <script defer src="sync.js"></script>
+  <script defer src="editor.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+
+  <!-- =========================================================
+       VIEW 1: GATEWAY (STUDENT JOIN / LECTURER ADMIN LOGIN)
+       ========================================================= -->
+  <main id="view-gateway" class="gateway-shell">
+    <div class="gateway-card">
+      <header class="gateway-header">
+        <div class="brand-emblem">WH</div>
+        <div>
+          <h1 class="gateway-title">Academic Writing Hub</h1>
+          <p class="gateway-subtitle">Live Drafting &amp; Collaborative Revision Studio</p>
+        </div>
+      </header>
+
+      <div class="gateway-tabs" role="tablist">
+        <button id="tab-btn-student" class="gateway-tab active" role="tab" aria-selected="true">
+          Student Entry
+        </button>
+        <button id="tab-btn-admin" class="gateway-tab" role="tab" aria-selected="false">
+          Lecturer Studio
+        </button>
+      </div>
+
+      <!-- Student Join Panel -->
+      <section id="panel-join-student" class="gateway-panel">
+        <p class="panel-note">
+          Join anonymously. Your identity remains hidden from classmates while allowing live classroom feedback.
+        </p>
+        <div class="form-group">
+          <label for="student-room-input">Session Room Code</label>
+          <input id="student-room-input" type="text" placeholder="e.g. METH-204" autocomplete="off" spellcheck="false" />
+        </div>
+        <div id="student-db-wrapper" class="form-group">
+          <label for="student-db-input">Sync Database URL <span class="muted-hint">(auto-filled via class link/QR)</span></label>
+          <input id="student-db-input" type="url" placeholder="https://your-project-default-rtdb.firebasedatabase.app" autocomplete="off" />
+        </div>
+        <div id="student-join-error" class="error-banner hidden"></div>
+        <button id="btn-student-join" class="btn btn-primary btn-block">Enter Writing Room</button>
+      </section>
+
+      <!-- Lecturer Admin Login Panel -->
+      <section id="panel-login-admin" class="gateway-panel hidden">
+        <div class="form-group">
+          <label for="admin-mode-select">Synchronisation Mode</label>
+          <select id="admin-mode-select">
+            <option value="firebase">Cloud Live Sync (Firebase — Wi-Fi &amp; 4G/5G)</option>
+            <option value="local">Local Browser Sandbox (Test across tabs offline)</option>
+          </select>
+        </div>
+
+        <div id="admin-db-group" class="form-group">
+          <label for="admin-db-input">Firebase Realtime Database URL</label>
+          <input id="admin-db-input" type="url" placeholder="https://your-project-default-rtdb.asia-southeast1.firebasedatabase.app" autocomplete="off" />
+          <small class="field-help">Stored privately in your browser and encoded into student QR/join links.</small>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="admin-room-input">Room Code</label>
+            <div class="input-with-btn">
+              <input id="admin-room-input" type="text" placeholder="METH-101" spellcheck="false" />
+              <button id="btn-generate-room" type="button" class="btn btn-secondary btn-sm" title="Generate Random Code">New</button>
+            </div>
+          </div>
+          <div class="form-group flex-1">
+            <label for="admin-pass-input">Lecturer Passphrase</label>
+            <input id="admin-pass-input" type="password" placeholder="Set or enter room PIN" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="admin-lesson-input">Lesson / Module Title</label>
+          <input id="admin-lesson-input" type="text" placeholder="e.g. Week 3: Operationalising Constructs &amp; Research Questions" />
+        </div>
+
+        <div id="admin-login-error" class="error-banner hidden"></div>
+        <button id="btn-admin-start" class="btn btn-primary btn-block">Open Lecturer Studio</button>
+      </section>
+    </div>
+  </main>
+
+  <!-- =========================================================
+       VIEW 2: LECTURER ADMIN INTERFACE (WORD-STYLE REVIEW STUDIO)
+       ========================================================= -->
+  <div id="view-admin" class="app-layout hidden">
+    <header class="topbar admin-topbar">
+      <div class="topbar-left">
+        <span class="role-pill">Lecturer</span>
+        <strong id="admin-lesson-badge" class="lesson-title-text">Research Methodology</strong>
+        <span class="divider-dot">&bull;</span>
+        <span class="room-chip">Room: <strong id="admin-room-badge">---</strong></span>
+        <span id="admin-status-badge" class="status-pill status-lobby">Lobby</span>
+      </div>
+
+      <div class="topbar-centre">
+        <div id="admin-timer-display" class="timer-readout">--:--</div>
+      </div>
+
+      <div class="topbar-right">
+        <button id="btn-open-invite" class="btn btn-outline-light btn-sm">Invite / QR</button>
+        <button id="btn-open-setup" class="btn btn-accent btn-sm">Configure Session</button>
+        <button id="btn-stop-writing" class="btn btn-danger btn-sm hidden">Stop Writing &amp; Broadcast</button>
+        <button id="btn-archive-session" class="btn btn-outline-light btn-sm">Archive</button>
+        <button id="btn-open-archives" class="btn btn-outline-light btn-sm">Saved Lessons</button>
+        <button id="btn-admin-logout" class="btn btn-ghost-light btn-sm" title="Exit Studio">Exit</button>
+      </div>
+    </header>
+
+    <div class="admin-workspace">
+      <!-- Left Drawer: Student Submissions -->
+      <aside id="admin-sidebar" class="submissions-sidebar">
+        <div class="sidebar-header">
+          <div>
+            <h2>Student Writings</h2>
+            <span class="muted-small"><span id="submissions-count">0</span> anonymous drafts</span>
+          </div>
+          <button id="btn-toggle-sidebar" class="btn-icon" title="Collapse/Expand List">&laquo;</button>
+        </div>
+        <div id="submissions-list" class="submissions-list">
+          <div class="empty-hint">No student submissions yet. Share the Invite Link/QR and start a writing session.</div>
+        </div>
+      </aside>
+
+      <button id="btn-expand-sidebar" class="sidebar-expand-tab hidden" title="Show Submissions">&raquo; Writings</button>
+
+      <!-- Centre Studio: Word-Style Tracked Revision & Editing -->
+      <section class="modelling-centre">
+        <div id="admin-empty-canvas" class="empty-studio-card">
+          <h3>Word-Style Review &amp; Modelling Studio</h3>
+          <p>
+            Select any student submission on the left to begin live revision. With <strong>Track Changes ON</strong>, typing, deleting, pasting, or formatting edits are marked automatically and broadcast to student screens.
+          </p>
+          <div class="empty-studio-actions">
+            <button id="btn-empty-setup" class="btn btn-primary">Start New Writing Session</button>
+            <button id="btn-empty-invite" class="btn btn-secondary">Show Student Join Link / QR</button>
+          </div>
+        </div>
+
+        <div id="admin-modelling-panel" class="modelling-panel hidden">
+          <div class="model-meta-bar">
+            <div class="model-meta-left">
+              <span class="live-broadcast-dot" title="Synced with student screens during Modelling phase"></span>
+              <span>Reviewing: <strong id="model-author-label">Researcher</strong></span>
+              <span id="model-wordcount-label" class="word-pill">0 words</span>
+              <span id="model-revcount-label" class="rev-summary-pill">0 tracked edits</span>
+            </div>
+            <div class="model-meta-right">
+              <label class="toggle-inline">
+                <input type="checkbox" id="chk-compare-original" />
+                <span>Split Original Pane (Synced)</span>
+              </label>
+              <button id="btn-reset-model" class="btn btn-secondary btn-xs" title="Revert document back to student's untouched submission">
+                Revert to Original
+              </button>
+            </div>
+          </div>
+
+          <!-- Split / Single Document Canvas -->
+          <div id="admin-canvas-split" class="canvas-split">
+            <div id="admin-original-pane" class="original-reference-pane hidden">
+              <div class="pane-caption">Untouched Student Original</div>
+              <div id="admin-original-content" class="academic-prose readonly-prose"></div>
+            </div>
+            <div class="editor-active-pane">
+              <div id="admin-editor-mount"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Pedagogical Margin Comments -->
+      <aside class="comments-sidebar">
+        <div class="sidebar-header">
+          <div>
+            <h2>Review Comments</h2>
+            <span class="muted-small">Synced live to student screens</span>
+          </div>
+        </div>
+
+        <!-- Comment Composer -->
+        <div id="comment-composer" class="comment-composer hidden">
+          <div class="composer-quote" id="comment-quote-preview"></div>
+          <label for="comment-tag-select" class="sr-only">Feedback Category</label>
+          <select id="comment-tag-select">
+            <option value="Construct Clarity">Construct Clarity</option>
+            <option value="Methodological Rigour">Methodological Rigour</option>
+            <option value="Sampling &amp; Validity">Sampling &amp; Validity</option>
+            <option value="Academic Hedging &amp; Style">Academic Hedging &amp; Style</option>
+            <option value="Cohesion &amp; Logic">Cohesion &amp; Logic</option>
+            <option value="Strength / Exemplary Move">Strength / Exemplary Move</option>
+          </select>
+          <textarea id="comment-text-input" rows="3" placeholder="Write analytical commentary for the class..."></textarea>
+          <div class="composer-actions">
+            <button id="btn-save-comment" class="btn btn-primary btn-xs">Post Comment</button>
+            <button id="btn-cancel-comment" class="btn btn-secondary btn-xs">Cancel</button>
+          </div>
+        </div>
+
+        <div id="admin-comments-list" class="comments-list">
+          <div class="empty-hint">Select text in the document and click <strong>+ New Comment</strong> in the Review ribbon.</div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       VIEW 3: STUDENT INTERFACE (LOBBY -> EDITOR -> LIVE MIRROR)
+       ========================================================= -->
+  <div id="view-student" class="app-layout hidden">
+    <header class="topbar student-topbar">
+      <div class="topbar-left">
+        <span class="alias-pill">
+          <span id="student-alias-label">Anonymous Researcher</span>
+          <button id="btn-shuffle-alias" class="alias-shuffle-btn" title="Generate new anonymous pseudonym">&#x21bb;</button>
+        </span>
+        <span class="conn-indicator">
+          <span id="student-conn-dot" class="conn-dot online"></span>
+          <span id="student-conn-text">Live</span>
+        </span>
+      </div>
+
+      <div class="topbar-centre">
+        <div id="student-timer-badge" class="timer-readout">--:--</div>
+      </div>
+
+      <div class="topbar-right">
+        <span id="student-phase-badge" class="status-pill status-lobby">Waiting</span>
+        <button id="btn-switch-to-admin" class="btn btn-ghost-light btn-xs" title="Lecturer Unlock">&#x1F512;</button>
+        <button id="btn-student-leave" class="btn btn-outline-light btn-xs">Leave</button>
+      </div>
+    </header>
+
+    <!-- Student Sub-View A: Lobby -->
+    <section id="student-phase-lobby" class="student-stage lobby-stage">
+      <div class="lobby-card">
+        <h2>Connected to <span id="student-lobby-room">Room</span></h2>
+        <p class="lobby-lesson" id="student-lobby-lesson">Waiting for the lecturer to launch the writing prompt.</p>
+        <p class="muted-small">Keep this browser tab open. Your editor will appear automatically as soon as the session begins.</p>
+      </div>
+    </section>
+
+    <!-- Student Sub-View B: Active Writing -->
+    <section id="student-phase-writing" class="student-stage writing-stage hidden">
+      <div class="writing-container">
+        <details class="prompt-banner" open>
+          <summary class="prompt-summary">
+            <div class="prompt-title-group">
+              <strong id="prompt-topic-title">Writing Task</strong>
+              <span id="prompt-genre-badge" class="meta-tag">Methodology Text</span>
+              <span id="prompt-wordlimit-badge" class="meta-tag">No word limit</span>
+            </div>
+            <span class="toggle-hint">Prompt Details</span>
+          </summary>
+          <div id="prompt-instructions-body" class="prompt-instructions"></div>
+        </details>
+
+        <div class="student-editor-card">
+          <div id="student-editor-mount"></div>
+          <footer class="editor-statusbar">
+            <div id="student-word-counter" class="word-counter">0 words</div>
+            <div class="statusbar-right">
+              <span id="student-save-status" class="save-indicator">Draft ready</span>
+              <button id="btn-student-submit" class="btn btn-primary btn-sm">Save &amp; Submit Text</button>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </section>
+
+    <!-- Student Sub-View C: Read-Only Live Modelling Mirror -->
+    <section id="student-phase-modelling" class="student-stage mirror-stage hidden">
+      <div class="mirror-banner">
+        <div>
+          <strong>Writing Closed &mdash; Live Classroom Review</strong>
+          <span class="mirror-sub">Viewing the lecturer&rsquo;s real-time revision workspace (view-only)</span>
+        </div>
+        <div class="markup-legend">
+          <span id="mirror-viewmode-badge" class="meta-tag">All Markup</span>
+          <span class="legend-item"><ins class="rev-ins">Insertion</ins></span>
+          <span class="legend-item"><del class="rev-del">Deletion</del></span>
+          <span class="legend-item"><mark class="rev-hl" data-tag="Construct Clarity">Highlight</mark></span>
+        </div>
+      </div>
+
+      <div id="mirror-waiting-notice" class="lobby-card">
+        <h3>Session Locked</h3>
+        <p>Your writing has been submitted safely. The lecturer is selecting a text to review with the class&mdash;your screen will update automatically.</p>
+      </div>
+
+      <div id="mirror-workspace" class="mirror-workspace hidden">
+        <div class="mirror-main-column">
+          <div class="mirror-doc-header">
+            <span>Selected Model: <strong id="mirror-author-badge">Anonymous Draft</strong></span>
+          </div>
+          <div id="mirror-split-container" class="canvas-split">
+            <div id="mirror-original-pane" class="original-reference-pane hidden">
+              <div class="pane-caption">Original Student Draft</div>
+              <div id="mirror-original-body" class="academic-prose readonly-prose"></div>
+            </div>
+            <div class="mirror-active-pane">
+              <div class="pane-caption">Lecturer&rsquo;s Tracked Review</div>
+              <div id="mirror-model-body" class="academic-prose readonly-prose view-all-markup"></div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="mirror-comments-column">
+          <div class="sidebar-header">
+            <h2>Review Comments</h2>
+          </div>
+          <div id="mirror-comments-list" class="comments-list">
+            <div class="empty-hint">Margin commentary will appear here as the lecturer reviews the text.</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+
+  <!-- =========================================================
+       MODALS
+       ========================================================= -->
+
+  <!-- Modal 1: Configure & Start Writing Session -->
+  <div id="modal-session-setup" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Configure Writing Session</h3>
+        <button id="btn-close-setup" class="btn-icon">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="setup-topic">Session Topic / Task Title</label>
+          <input id="setup-topic" type="text" placeholder="e.g. Drafting a Qualitative Sampling &amp; Recruitment Justification" />
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="setup-genre">Target Text Type</label>
+            <select id="setup-genre">
+              <option value="Research Questions &amp; Hypotheses">Research Questions &amp; Hypotheses</option>
+              <option value="Research Design &amp; Methodology">Research Design &amp; Methodology</option>
+              <option value="Operationalisation &amp; Variables">Operationalisation &amp; Variables</option>
+              <option value="Sampling &amp; Ethics Statement">Sampling &amp; Ethics Statement</option>
+              <option value="Literature Critique / Synthesis">Literature Critique / Synthesis</option>
+              <option value="Data Analysis &amp; Qualitative Excerpt">Data Analysis &amp; Qualitative Excerpt</option>
+              <option value="Abstract / Structured Summary">Abstract / Structured Summary</option>
+            </select>
+          </div>
+          <div class="form-group flex-1">
+            <label for="setup-duration">Time Limit (Minutes)</label>
+            <input id="setup-duration" type="number" min="0" max="180" value="15" />
+            <small class="field-help">Set 0 for untimed manual stop.</small>
+          </div>
+          <div class="form-group flex-1">
+            <label for="setup-wordlimit">Word Limit</label>
+            <input id="setup-wordlimit" type="number" min="0" max="5000" value="250" />
+            <small class="field-help">Set 0 for unrestricted length.</small>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="setup-instructions">Requirements &amp; Methodological Criteria</label>
+          <textarea id="setup-instructions" rows="4" placeholder="Specify required elements (e.g. target population, inclusion criteria, sample size rationale, and one potential limitation)..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="toggle-inline">
+            <input type="checkbox" id="setup-clear-previous" checked />
+            <span>Clear previous session submissions before starting (archive first if needed)</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-cancel-setup" class="btn btn-secondary">Cancel</button>
+        <button id="btn-launch-session" class="btn btn-primary">Start Writing Session Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Student Invite Link & QR Code -->
+  <div id="modal-invite" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-narrow">
+      <div class="modal-header">
+        <h3>Student One-Click Entry</h3>
+        <button id="btn-close-invite" class="btn-icon">&times;</button>
+      </div>
+      <div class="modal-body text-centre">
+        <p class="muted-small">Students scan or open this link on Wi-Fi or 4G/5G mobile data—zero login required.</p>
+        <div class="room-code-banner" id="invite-room-code">METH-101</div>
+        <div id="invite-qr-box" class="qr-box"></div>
+        <div id="invite-mode-warning" class="warning-banner hidden">
+          You are in <strong>Local Browser Sandbox</strong> mode. Open this link in another tab of this browser to test, or switch to Firebase mode for student phones/laptops.
+        </div>
+        <div class="input-with-btn">
+          <input id="invite-url-input" type="text" readonly />
+          <button id="btn-copy-invite" class="btn btn-primary btn-sm">Copy Link</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Archived Lessons & Export Manager -->
+  <div id="modal-archives" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <h3>Archived Writing Sessions &amp; Lessons</h3>
+        <button id="btn-close-archives" class="btn-icon">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="archive-toolbar">
+          <span class="muted-small">Stored locally in your browser (IndexedDB). Export printable handouts or JSON backups anytime.</span>
+          <div class="archive-toolbar-btns">
+            <button id="btn-export-all-json" class="btn btn-secondary btn-xs">Export All (JSON)</button>
+            <button id="btn-import-json" class="btn btn-secondary btn-xs">Import JSON</button>
+            <input id="file-import-json" type="file" accept=".json" class="hidden" />
+          </div>
+        </div>
+        <div id="archives-list" class="archives-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: Lecturer Passphrase Unlock (from Student View) -->
+  <div id="modal-admin-unlock" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-narrow">
+      <div class="modal-header">
+        <h3>Lecturer Studio Unlock</h3>
+        <button id="btn-cancel-unlock" class="btn-icon">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="unlock-pass-input">Enter Room Passphrase</label>
+          <input id="unlock-pass-input" type="password" placeholder="Passphrase" />
+        </div>
+        <div id="unlock-error" class="error-banner hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-confirm-unlock" class="btn btn-primary btn-block">Unlock Admin View</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+</body>
+</html>
